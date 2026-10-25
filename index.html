@@ -1,0 +1,233 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ocellus Melee Parry Simulator</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #10131c;
+    color: #f1f5f9;
+    font-family: system-ui, sans-serif;
+    text-align: center;
+    padding: 30px 16px;
+  }
+  main {
+    max-width: 600px;
+    margin: auto;
+    background: #1b2230;
+    padding: 24px;
+    border-radius: 18px;
+  }
+  h1 { font-size: 25px; }
+  #arena {
+    margin: 24px 0;
+    padding: 30px 12px;
+    border: 2px solid #39465c;
+    border-radius: 14px;
+    background: #141a25;
+  }
+  #enemy { font-size: 64px; }
+  #status {
+    min-height: 55px;
+    font-size: 20px;
+    font-weight: bold;
+    margin-top: 12px;
+  }
+  button {
+    padding: 13px 22px;
+    margin: 6px;
+    border: 0;
+    border-radius: 9px;
+    font-weight: bold;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  #parry { background: #f59e0b; color: #111827; }
+  #start { background: #60a5fa; color: #111827; }
+  #reset { background: #374151; color: white; }
+  button:disabled { opacity: .4; cursor: default; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .stat {
+    background: #252f40;
+    padding: 12px 4px;
+    border-radius: 10px;
+  }
+  .value { font-size: 24px; font-weight: bold; }
+  .label { color: #b8c3d5; font-size: 12px; }
+  .hint { color: #b8c3d5; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>⚔️ Ocellus Melee Parry Trainer</h1>
+  <p class="hint">Standalone timing simulator — not connected to the live game.</p>
+
+  <section id="arena">
+    <div id="enemy">🛡️</div>
+    <div id="status" aria-live="polite">Press Start to begin</div>
+    <p id="detail" class="hint">Wait for the attack cue, then parry.</p>
+  </section>
+
+  <button id="start">Start training</button>
+  <button id="parry" disabled>⚔️ PARRY</button>
+  <button id="reset">Reset</button>
+
+  <h2>Session stats</h2>
+  <div class="stats">
+    <div class="stat">
+      <div class="value" id="attempts">0</div>
+      <div class="label">ATTACKS</div>
+    </div>
+    <div class="stat">
+      <div class="value" id="success">0</div>
+      <div class="label">PARRIES</div>
+    </div>
+    <div class="stat">
+      <div class="value" id="accuracy">0%</div>
+      <div class="label">ACCURACY</div>
+    </div>
+  </div>
+  <p id="average" class="hint">Average successful reaction: —</p>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  const WINDOW_MS = 350;
+  const TOTAL_ROUNDS = 20;
+
+  let running = false;
+  let phase = "idle";
+  let timer = null;
+  let attackTime = 0;
+  let attempts = 0;
+  let successes = 0;
+  let reactionTotal = 0;
+  let round = 0;
+
+  function message(status, detail) {
+    $("status").textContent = status;
+    $("detail").textContent = detail;
+  }
+
+  function updateStats() {
+    $("attempts").textContent = attempts;
+    $("success").textContent = successes;
+    $("accuracy").textContent = attempts
+      ? Math.round(successes / attempts * 100) + "%"
+      : "0%";
+
+    $("average").textContent = successes
+      ? "Average successful reaction: " +
+        (reactionTotal / successes).toFixed(0) + " ms"
+      : "Average successful reaction: —";
+  }
+
+  function finishRound() {
+    if (!running) return;
+    phase = "result";
+    $("parry").disabled = true;
+    $("enemy").textContent = "🛡️";
+    attempts++;
+    updateStats();
+
+    if (round >= TOTAL_ROUNDS) {
+      running = false;
+      $("start").disabled = false;
+      message("Training complete!", "Press Reset to start another session.");
+      return;
+    }
+
+    message("Get ready...", `Round ${round} of ${TOTAL_ROUNDS}`);
+    timer = setTimeout(scheduleAttack, 800 + Math.random() * 500);
+  }
+
+  function scheduleAttack() {
+    if (!running) return;
+    phase = "waiting";
+    $("enemy").textContent = "🛡️";
+    message("Watch carefully...", `Round ${round} of ${TOTAL_ROUNDS}`);
+
+    timer = setTimeout(() => {
+      if (!running || phase !== "waiting") return;
+      phase = "attack";
+      attackTime = performance.now();
+      $("enemy").textContent = "⚔️";
+      message("INCOMING MELEE!", "Click PARRY now!");
+      $("parry").disabled = false;
+
+      timer = setTimeout(() => {
+        if (phase !== "attack") return;
+        $("parry").disabled = true;
+        message("MISSED!", "The parry window has passed.");
+        finishRound();
+      }, WINDOW_MS);
+    }, 1000 + Math.random() * 2500);
+  }
+
+  $("parry").addEventListener("click", () => {
+    if (phase !== "attack") return;
+
+    const reaction = performance.now() - attackTime;
+    clearTimeout(timer);
+    phase = "result";
+    $("parry").disabled = true;
+    $("enemy").textContent = "🛡️";
+
+    if (reaction <= WINDOW_MS) {
+      successes++;
+      reactionTotal += reaction;
+      message("PARRY SUCCESS!", `Reaction time: ${reaction.toFixed(0)} ms`);
+    } else {
+      message("TOO SLOW!", `Reaction time: ${reaction.toFixed(0)} ms`);
+    }
+
+    finishRound();
+  });
+
+  $("start").addEventListener("click", () => {
+    if (running) return;
+    running = true;
+    round = 0;
+    $("start").disabled = true;
+    nextRound();
+  });
+
+  function nextRound() {
+    if (!running) return;
+    round++;
+    if (round > TOTAL_ROUNDS) {
+      running = false;
+      $("start").disabled = false;
+      message("Training complete!", "Press Reset to practise again.");
+      return;
+    }
+    scheduleAttack();
+  }
+
+  $("reset").addEventListener("click", () => {
+    clearTimeout(timer);
+    running = false;
+    phase = "idle";
+    attempts = successes = reactionTotal = round = 0;
+    $("start").disabled = false;
+    $("parry").disabled = true;
+    $("enemy").textContent = "🛡️";
+    message("Press Start to begin", "Wait for the attack cue, then parry.");
+    updateStats();
+  });
+
+  updateStats();
+})();
+</script>
+</body>
+</html>
